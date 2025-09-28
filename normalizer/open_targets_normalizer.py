@@ -1,7 +1,14 @@
 import requests
 import logging
-from chembl_webresource_client.new_client import new_client
 import mygene
+
+try:
+    from chembl_webresource_client.new_client import new_client
+except Exception as exc:  # pragma: no cover - network dependent import
+    new_client = None
+    logging.warning(
+        "Unable to initialise ChEMBL new_client during import: %s", exc
+    )
 
 
 class Normalizer:
@@ -25,16 +32,29 @@ class Normalizer:
 
     @staticmethod
     def get_chembl_id(term: str) -> str:
-        molecule = new_client.molecule
-        results = molecule.search(term)
-        results_list = list(results)
+        if new_client is None:
+            logging.warning(
+                "ChEMBL client unavailable, skipping lookup for '%s'", term
+            )
+            return None
+
+        try:
+            molecule = new_client.molecule
+            results = molecule.search(term)
+            results_list = list(results)
+        except Exception as exc:
+            logging.error(
+                "Failed to retrieve ChEMBL ID for '%s': %s", term, exc
+            )
+            return None
+
         if results_list:
             chembl_id = results_list[0].get('molecule_chembl_id')
             logging.info(f"Found ChEMBL ID for '{term}': {chembl_id}")
             return chembl_id
-        else:
-            logging.warning(f"No ChEMBL ID found for '{term}'")
-            return None
+
+        logging.warning(f"No ChEMBL ID found for '{term}'")
+        return None
 
     @staticmethod
     def get_ensembl_id(term: str, species: str = "human") -> str:
