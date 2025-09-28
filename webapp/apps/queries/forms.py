@@ -25,3 +25,20 @@ class QueryForm(forms.Form):
             "class": "form-control"
         })
     )
+
+
+class QueryTemplateForm(forms.Form):
+    name = forms.CharField(
+        max_length=120,
+        widget=forms.TextInput(attrs={
+            "class": "form-control",
+            "placeholder": "e.g. BRCA1 monitoring cadence"
+        })
+    )
+    text = forms.CharField(
+        widget=forms.Textarea(attrs={
+            "rows": 4,
+            "class": "form-control",
+            "placeholder": "Template prompt"
+        })
+    )

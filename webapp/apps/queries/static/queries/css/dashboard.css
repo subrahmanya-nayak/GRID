@@ -213,3 +213,96 @@
         border-radius: 1rem;
     }
 }
+
+.history-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.history-tags {
+    margin-top: 0.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.template-item {
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    border-radius: 1rem;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.92);
+}
+
+.template-item .btn {
+    width: 2rem;
+    height: 2rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+.health-metrics {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.health-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.9rem;
+}
+
+.health-row .label {
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+}
+
+.health-row .value {
+    font-weight: 600;
+}
+
+.progress-pill {
+    width: 100%;
+    background: rgba(148, 163, 184, 0.2);
+    border-radius: 999px;
+    height: 0.55rem;
+    overflow: hidden;
+    position: relative;
+}
+
+.progress-pill span {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #6366f1, #14b8a6);
+}
+
+.offcanvas .nav-pills .nav-link {
+    border-radius: 999px;
+}
+
+.source-card {
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 1rem;
+    padding: 1rem;
+    background: rgba(248, 250, 252, 0.9);
+}
+
+.source-card + .source-card {
+    margin-top: 1rem;
+}
+
+#drawer-tags .badge {
+    background: rgba(37, 99, 235, 0.12);
+    color: #1d4ed8;
+}
+
+.toast-container .toast {
+    min-width: 260px;
+}
