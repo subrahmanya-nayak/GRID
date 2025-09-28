@@ -76,6 +76,15 @@ class DBFinder:
 
         results = []
 
+        def add_result(item):
+            if item is None:
+                return
+            if isinstance(item, (list, tuple)):
+                for sub_item in item:
+                    add_result(sub_item)
+            else:
+                results.append(item)
+
         def notify(progress, stage):
             if progress_callback:
                 try:
@@ -86,26 +95,26 @@ class DBFinder:
         if classification == "clinical_trials":
             notify(45, "Running ClinicalTrials.gov pipeline")
             console.print("[yellow]Fetching from Clinical Trials...[/yellow]")
-            results.append(run_clinical_trials(query))
+            add_result(run_clinical_trials(query))
 
         elif classification == "open_targets":
             notify(45, "Running Open Targets pipeline")
             console.print("[yellow]Fetching from Open Targets...[/yellow]")
-            results.append(run_open_targets(query))
+            add_result(run_open_targets(query))
 
         elif classification == "both":
             notify(40, "Running ClinicalTrials.gov pipeline")
             console.print("[yellow]Fetching from both sources...[/yellow]")
-            results.append(run_clinical_trials(query))
+            add_result(run_clinical_trials(query))
             notify(65, "Running Open Targets pipeline")
-            results.append(run_open_targets(query))
+            add_result(run_open_targets(query))
 
         elif classification in {"none", "unknown"}:
             notify(40, "Running ClinicalTrials.gov pipeline (fallback)")
             console.print("[yellow]Fallback: querying both data sources...[/yellow]")
-            results.append(run_clinical_trials(query))
+            add_result(run_clinical_trials(query))
             notify(65, "Running Open Targets pipeline (fallback)")
-            results.append(run_open_targets(query))
+            add_result(run_open_targets(query))
             self.last_resolution = "both"
             self.last_rationale += " Fallback executed to cover both pipelines."
 

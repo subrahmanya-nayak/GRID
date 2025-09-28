@@ -67,7 +67,7 @@ def run_pipeline(input_sentence: str):
     results = extract_and_normalize(input_sentence)
     if results is None:
         console.print("[red]Entity extraction or normalization failed.[/red]")
-        return
+        return []
 
     disease_known_drugs_rows = []
     drug_indications_rows = []
@@ -103,12 +103,45 @@ def run_pipeline(input_sentence: str):
         target_associated_diseases_rows
     )
 
+    outputs = []
+
+    if not merged_df.empty:
+        merged_df = merged_df.copy()
+        if 'drug.id' in merged_df.columns:
+            merged_df['url'] = merged_df['drug.id'].apply(
+                lambda identifier: f"https://platform.opentargets.org/drug/{identifier}" if identifier else ''
+            )
+        merged_df.attrs.update({
+            'source': 'Open Targets evidence',
+            'title_field': ('drug.name', 'disease.name'),
+            'summary_field': ('label', 'targetClass'),
+            'link_field': ('url',),
+        })
+        outputs.append(merged_df)
+
+    if not targets_df.empty:
+        targets_df = targets_df.copy()
+        if 'target.id' in targets_df.columns:
+            targets_df['url'] = targets_df['target.id'].apply(
+                lambda identifier: f"https://platform.opentargets.org/target/{identifier}" if identifier else ''
+            )
+        targets_df.attrs.update({
+            'source': 'Open Targets targets',
+            'title_field': ('target.approvedSymbol', 'target.approvedName'),
+            'summary_field': ('target.approvedName',),
+            'link_field': ('url',),
+        })
+        outputs.append(targets_df)
+
     save_results(disease_known_drugs_rows, "disease_known_drugs.csv")
     save_results(drug_indications_rows, "drug_indications.csv")
     save_results(target_associated_diseases_rows, "target_associated_targets.csv")
     save_results(merged_df.to_dict(orient="records"), "merged_results.csv")
     save_results(targets_df.to_dict(orient="records"), "targets_only.csv")
 
-    console.print("[bold green]Pipeline completed successfully![/bold green]")
+    if outputs:
+        console.print("[bold green]Pipeline completed successfully![/bold green]")
+    else:
+        console.print("[yellow]Pipeline finished but no Open Targets records were returned.[/yellow]")
 
-
+    return outputs

@@ -45,22 +45,27 @@ def fetch_clinical_trials(condition=None, intervention=None, phase=None, status=
 
         for study in studies:
             protocol = study.get("protocolSection", {})
-            nctId = protocol.get("identificationModule", {}).get("nctId", "N/A")
+            identification = protocol.get("identificationModule", {})
+            nctId = identification.get("nctId", "N/A")
+            title = identification.get("briefTitle") or nctId or "Clinical trial"
             status_val = protocol.get("statusModule", {}).get("overallStatus", "Unknown")
             conds = ", ".join(protocol.get("conditionsModule", {}).get("conditions", []))
             interventions = protocol.get("armsInterventionsModule", {}).get("interventions", [])
             interventions_str = ", ".join([i.get("name", "") for i in interventions]) or "None"
             phases = ", ".join(protocol.get("designModule", {}).get("phases", []))
+            trial_url = f"https://clinicaltrials.gov/study/{nctId}" if nctId and nctId != "N/A" else ""
 
             if phase and phases and phase.lower() not in phases.lower():
                 continue
 
             trials.append({
+                "title": title,
                 "NCT Number": nctId,
                 "Status": status_val,
                 "Condition": conds,
                 "Interventions": interventions_str,
-                "Phases": phases
+                "Phases": phases,
+                "url": trial_url,
             })
 
         nextPageToken = data.get("nextPageToken")
@@ -70,6 +75,12 @@ def fetch_clinical_trials(condition=None, intervention=None, phase=None, status=
             break
 
     df = pd.DataFrame(trials).drop_duplicates(subset=["NCT Number"])
+    df.attrs.update({
+        "source": "ClinicalTrials.gov",
+        "title_field": ("title", "NCT Number"),
+        "summary_field": ("Status",),
+        "link_field": ("url",),
+    })
     return df
 
 # === Save & Display ===
