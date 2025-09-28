@@ -1,0 +1,9 @@
+requests
+pandas
+rich
+diskcache
+langchain
+langchain-community
+ipython
+chembl_webresource_client
+mygene
