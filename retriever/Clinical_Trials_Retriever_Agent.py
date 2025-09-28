@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import re
+from json import JSONDecodeError
 from typing import Dict, List, Optional
 
 import pandas as pd
@@ -83,7 +84,12 @@ def fetch_clinical_trials(
         except requests.RequestException as exc:
             raise RuntimeError(f"ClinicalTrials.gov request failed: {exc}") from exc
 
-        data = response.json()
+        try:
+            data = response.json()
+        except (ValueError, JSONDecodeError) as exc:
+            raise RuntimeError(
+                "ClinicalTrials.gov returned invalid JSON payload"
+            ) from exc
         studies = data.get("studies", [])
         if not studies:
             break
