@@ -14,9 +14,9 @@
                     <h1 class="display-6 fw-semibold mt-3">Ask GRID anything about clinical evidence</h1>
                     <p class="lead text-muted mb-4">Break down complex biomedical questions and uncover relevant trials, targets, and publications in seconds.</p>
                     <ul class="feature-pills list-unstyled d-flex flex-wrap gap-2 mb-0">
-                        <li class="pill"><i class="bi bi-lightning-charge-fill"></i> Async processing</li>
+                        <li class="pill"><i class="bi bi-lightning-charge-fill"></i> Live progress</li>
                         <li class="pill"><i class="bi bi-diagram-3-fill"></i> Knowledge graph aware</li>
-                        <li class="pill"><i class="bi bi-shield-lock-fill"></i> Private workspace</li>
+                        <li class="pill"><i class="bi bi-bar-chart-line"></i> Exportable insights</li>
                     </ul>
                 </div>
                 <div class="col-12 col-lg-5">
@@ -32,41 +32,47 @@
                             <span class="stat-meta"><i class="bi bi-check-all me-1"></i>ready to review</span>
                         </div>
                         <div class="stat-card">
-                            <span class="stat-label">History</span>
-                            <span class="stat-value">{{ history|length }}</span>
-                            <span class="stat-meta">
-                                {% if last_activity %}
-                                    Updated {{ last_activity|timesince }} ago
-                                {% else %}
-                                    Start your first search
-                                {% endif %}
-                            </span>
+                            <span class="stat-label">Avg runtime</span>
+                            <span class="stat-value">{{ metrics.avg_duration|floatformat:1 }}s</span>
+                            <span class="stat-meta">Success rate {{ metrics.success_rate|floatformat:0 }}%</span>
                         </div>
                     </div>
                 </div>
             </div>
             <form id="query-form" class="mt-4">
                 {% csrf_token %}
-                <div class="floating-field">
+                <div class="floating-field mb-3">
                     {{ form.text }}
                 </div>
-                <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-3 mt-4">
+                <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-lg-between gap-3">
                     <div class="text-muted small">
-                        <i class="bi bi-shield-check me-1"></i>Orchestrated with Celery — updates arrive automatically.
+                        <i class="bi bi-shield-check me-1"></i>Celery orchestrates queries while we stream progress updates.
                     </div>
-                    <button type="submit" class="btn btn-gradient">
-                        <span class="me-2"><i class="bi bi-send-fill"></i></span>Submit query
-                    </button>
+                    <div class="d-flex flex-wrap gap-2">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#templateModal">
+                            <i class="bi bi-bookmark-plus me-2"></i>Save as template
+                        </button>
+                        <button type="submit" class="btn btn-gradient">
+                            <span class="me-2"><i class="bi bi-send-fill"></i></span>Submit query
+                        </button>
+                    </div>
                 </div>
             </form>
         </section>
 
         <section class="panel-card p-4 p-lg-5">
-            <div class="section-heading">
-                <h2 class="h4 fw-semibold mb-0">Latest results</h2>
-                <div class="meta d-flex align-items-center gap-2">
-                    <i class="bi bi-columns-gap"></i>
-                    Responsive insights table
+            <div class="section-heading flex-wrap gap-3">
+                <div>
+                    <h2 class="h4 fw-semibold mb-0">Latest results</h2>
+                    <div class="meta d-flex align-items-center gap-2">
+                        <i class="bi bi-columns-gap"></i>
+                        Explore results by source and export to CSV
+                    </div>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <button class="btn btn-outline-primary btn-sm" id="status-filter-success" data-status="success"><i class="bi bi-check-circle me-1"></i>Completed</button>
+                    <button class="btn btn-outline-info btn-sm" id="status-filter-running" data-status="running"><i class="bi bi-hourglass-split me-1"></i>Running</button>
+                    <button class="btn btn-outline-secondary btn-sm" id="status-filter-clear"><i class="bi bi-funnel me-1"></i>Clear</button>
                 </div>
             </div>
             <div class="table-responsive">
@@ -75,8 +81,10 @@
                         <tr>
                             <th>Submitted</th>
                             <th>Status</th>
+                            <th>Progress</th>
                             <th>Classification</th>
-                            <th>Result</th>
+                            <th>Sources</th>
+                            <th class="text-end">Actions</th>
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -98,43 +106,76 @@
                             <div class="history-body">
                                 <div class="history-title">{{ item.short_text|default:item.text|truncatechars:80 }}</div>
                                 <div class="history-meta">{{ item.created_at|date:'M j, Y · H:i' }}</div>
+                                {% if item.tags %}
+                                    <div class="history-tags">
+                                        {% for tag in item.tags %}
+                                            <span class="badge bg-dark-subtle text-dark-emphasis me-1">{{ tag }}</span>
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
                             </div>
-                            <button class="btn btn-link text-danger p-0 delete-query" data-query-id="{{ item.id }}" title="Delete conversation">
-                                <i class="bi bi-trash"></i>
-                            </button>
+                            <div class="history-actions">
+                                <button class="btn btn-link text-primary p-0 me-2 rerun-query" data-query-id="{{ item.id }}" title="Re-run query">
+                                    <i class="bi bi-arrow-repeat"></i>
+                                </button>
+                                <button class="btn btn-link text-danger p-0 delete-query" data-query-id="{{ item.id }}" title="Delete conversation">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
                         </article>
                     {% endfor %}
                 </div>
             {% else %}
-                <p class="text-muted small mb-0">No history yet. Submit your first question to start building your workspace.</p>
+                <p id="history-empty-state" class="text-muted small mb-0">No history yet. Submit your first question to start building your workspace.</p>
+            {% endif %}
+        </section>
+
+        <section class="panel-card p-4">
+            <div class="section-heading">
+                <h2 class="h5 fw-semibold mb-0">Saved templates</h2>
+                <span class="badge bg-success-subtle text-success-emphasis">{{ templates|length }} ready</span>
+            </div>
+            {% if templates %}
+                <ul class="list-unstyled d-flex flex-column gap-3 mb-0" id="template-list">
+                    {% for template in templates %}
+                        <li class="template-item d-flex align-items-start gap-3" data-template-id="{{ template.id }}">
+                            <div class="icon-circle bg-info-subtle text-info"><i class="bi bi-journal-text"></i></div>
+                            <div class="flex-grow-1">
+                                <div class="fw-semibold">{{ template.name }}</div>
+                                <p class="text-muted small mb-1">{{ template.text|truncatechars:120 }}</p>
+                                {% if template.last_used_at %}
+                                    <div class="text-muted tiny">Last used {{ template.last_used_at|timesince }} ago</div>
+                                {% endif %}
+                            </div>
+                            <div class="d-flex flex-column align-items-end gap-1">
+                                <button class="btn btn-sm btn-outline-primary load-template" data-template-id="{{ template.id }}"><i class="bi bi-upload"></i></button>
+                                <button class="btn btn-sm btn-outline-success run-template" data-template-id="{{ template.id }}"><i class="bi bi-play"></i></button>
+                                <button class="btn btn-sm btn-outline-danger delete-template" data-template-id="{{ template.id }}"><i class="bi bi-x"></i></button>
+                            </div>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p class="text-muted small mb-0">Save frequent prompts to relaunch investigations instantly.</p>
             {% endif %}
         </section>
 
         <section class="panel-card p-4 info-card">
-            <h2 class="h6 fw-semibold text-uppercase text-muted mb-3">How GRID works</h2>
-            <ul class="list-unstyled d-flex flex-column gap-3 mb-0">
-                <li class="d-flex gap-3 align-items-start">
-                    <span class="icon-circle bg-primary-subtle text-primary"><i class="bi bi-cpu"></i></span>
-                    <div>
-                        <div class="fw-semibold">Pipeline orchestration</div>
-                        <p class="text-muted small mb-0">Celery tasks fan out enrichment jobs so multiple hypotheses can run in parallel.</p>
-                    </div>
-                </li>
-                <li class="d-flex gap-3 align-items-start">
-                    <span class="icon-circle bg-success-subtle text-success"><i class="bi bi-diagram-3"></i></span>
-                    <div>
-                        <div class="fw-semibold">Entity linking</div>
-                        <p class="text-muted small mb-0">We normalize drugs, targets, and trials to keep results comparable over time.</p>
-                    </div>
-                </li>
-                <li class="d-flex gap-3 align-items-start">
-                    <span class="icon-circle bg-warning-subtle text-warning"><i class="bi bi-bar-chart-line"></i></span>
-                    <div>
-                        <div class="fw-semibold">Insight delivery</div>
-                        <p class="text-muted small mb-0">Structured summaries arrive in the table while detailed reports remain one click away.</p>
-                    </div>
-                </li>
-            </ul>
+            <h2 class="h6 fw-semibold text-uppercase text-muted mb-3">Pipeline health</h2>
+            <div class="health-metrics" id="health-metrics" data-health-url="{% url 'queries:health' %}">
+                <div class="health-row">
+                    <span class="label">Celery workers</span>
+                    <span class="value" data-health-key="celery"></span>
+                </div>
+                <div class="health-row">
+                    <span class="label">ClinicalTrials.gov</span>
+                    <span class="value" data-health-key="clinical_trials"></span>
+                </div>
+                <div class="health-row">
+                    <span class="label">Open Targets</span>
+                    <span class="value" data-health-key="open_targets"></span>
+                </div>
+            </div>
         </section>
     </div>
 </div>
@@ -150,8 +191,77 @@
         </div>
     </div>
 </div>
+
+<div class="modal fade" id="templateModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header border-0">
+                <h5 class="modal-title">Save as template</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="template-form">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label">Template name</label>
+                        {{ template_form.name }}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Prompt</label>
+                        {{ template_form.text }}
+                        <div class="form-text">Current query text will be prefilled when saving.</div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="save-template-btn">Save template</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="offcanvas offcanvas-end" tabindex="-1" id="resultDrawer" aria-labelledby="resultDrawerLabel">
+    <div class="offcanvas-header">
+        <div>
+            <h5 id="resultDrawerLabel" class="mb-1">Query insights</h5>
+            <div class="text-muted small" id="drawer-meta"></div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    <div class="offcanvas-body d-flex flex-column">
+        <div class="mb-3">
+            <label class="form-label small text-uppercase">Tags</label>
+            <div class="d-flex flex-wrap gap-2 mb-2" id="drawer-tags"></div>
+            <div class="input-group input-group-sm">
+                <input type="text" class="form-control" id="tags-input" placeholder="oncology, trial">
+                <button class="btn btn-outline-primary" id="save-tags-btn"><i class="bi bi-save"></i></button>
+            </div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label small text-uppercase">Router rationale</label>
+            <p class="text-muted small mb-0" id="drawer-rationale">—</p>
+        </div>
+        <ul class="nav nav-pills mb-3" id="sourceTabs" role="tablist"></ul>
+        <div class="tab-content flex-grow-1" id="sourceTabContent"></div>
+        <div class="mt-3 d-flex justify-content-between align-items-center">
+            <button class="btn btn-outline-secondary" id="drawer-export"><i class="bi bi-file-earmark-arrow-down me-1"></i>Export CSV</button>
+            <div class="text-muted small" id="drawer-duration"></div>
+        </div>
+    </div>
+</div>
+
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1080;">
+    <div id="completion-toast" class="toast align-items-center text-bg-dark border-0" role="status" aria-live="assertive" aria-atomic="true">
+        <div class="d-flex">
+            <div class="toast-body">Query completed successfully.</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+    </div>
+</div>
 {% endblock %}
 {% block extra_js %}
 {{ queries_payload|json_script:'initial-data' }}
+{{ templates_payload|json_script:'template-data' }}
 <script src="{% static 'queries/js/dashboard.js' %}"></script>
 {% endblock %}
