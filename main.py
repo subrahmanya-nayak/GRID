@@ -49,6 +49,7 @@ router_chain = LLMChain(
 class DBFinder:
     def __init__(self):
         self.llm_router = router_chain
+        self.last_classification = None
 
     def classify_query(self, query: str) -> str:
         try:
@@ -62,6 +63,7 @@ class DBFinder:
 
     def route_and_query(self, query: str):
         classification = self.classify_query(query)
+        self.last_classification = classification
         console.print(f"[bold blue]Query classified as:[/bold blue] {classification}")
 
         results = []

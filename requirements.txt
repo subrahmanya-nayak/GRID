@@ -7,3 +7,6 @@ langchain-community
 ipython
 chembl_webresource_client
 mygene
+Django>=5.0
+celery>=5.3,<6
+redis>=5.0

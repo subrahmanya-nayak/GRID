@@ -1,39 +1,44 @@
-# Use Ubuntu base
 FROM ubuntu:22.04
 
-ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DJANGO_SETTINGS_MODULE=gridsite.settings \
+    PYTHONPATH=/app/webapp
 
-# Install system dependencies
 RUN apt-get update && apt-get install -y \
-    curl \
     bash \
+    build-essential \
+    curl \
+    git \
+    net-tools \
+    lsof \
     python3.11 \
+    python3.11-dev \
     python3.11-venv \
     python3.11-distutils \
-    lsof \
-    net-tools \
+    redis-server \
     && rm -rf /var/lib/apt/lists/*
 
-# Set python3 and pip3 to point to python3.11
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 && \
     curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11
 
-# Install Python packages
-COPY requirements.txt /tmp/requirements.txt
-RUN python3.11 -m pip install --no-cache-dir -r /tmp/requirements.txt
-
-# Install Ollama
-RUN curl -fsSL https://ollama.com/install.sh | sh
-
-# Pre-pull the Gemma 2 model so it’s ready
-RUN bash -c "ollama serve & sleep 5 && ollama pull gemma2 && pkill ollama"
-
-# Set working directory
 WORKDIR /app
 
-# Optional: copy your scripts into the container
-# COPY . /app/
+COPY requirements.txt ./
+RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
-# Start Ollama in background and keep shell open
-CMD bash -c "ollama serve & sleep 5 && ollama pull gemma2 && exec bash"
+COPY . ./
 
+RUN curl -fsSL https://ollama.com/install.sh | sh
+RUN bash -c "ollama serve & sleep 5 && ollama pull gemma2 && pkill ollama"
+
+EXPOSE 8000
+
+CMD bash -lc "redis-server --daemonize yes && \
+    ollama serve & \
+    sleep 5 && \
+    ollama pull gemma2 && \
+    python3 webapp/manage.py migrate && \
+    celery -A gridsite worker --loglevel=info & \
+    python3 webapp/manage.py runserver 0.0.0.0:8000"

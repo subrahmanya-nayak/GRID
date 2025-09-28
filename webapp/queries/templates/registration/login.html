@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block title %}Sign in · GRID{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-4">
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <h2 class="card-title text-center mb-4">Welcome back</h2>
+                <form method="post">
+                    {% csrf_token %}
+                    {% for field in form %}
+                        <div class="mb-3">
+                            <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                            {{ field.as_widget(attrs={'class': 'form-control'}) }}
+                            {% for error in field.errors %}
+                                <div class="invalid-feedback d-block">{{ error }}</div>
+                            {% endfor %}
+                        </div>
+                    {% endfor %}
+                    {% if form.errors %}
+                        <div class="alert alert-danger">Please check your username and password.</div>
+                    {% endif %}
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div></div>
+                        <a href="{% url 'password_reset' %}">Forgot password?</a>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">Sign in</button>
+                    </div>
+                    <input type="hidden" name="next" value="{{ next }}">
+                </form>
+                <div class="text-center mt-3">
+                    Need an account? <a href="{% url 'queries:signup' %}">Create one</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
