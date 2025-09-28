@@ -1,4 +1,6 @@
-from typing import List, Dict, Any
+import sys
+from pathlib import Path
+from typing import Any, Dict, List
 
 
 def normalize_results(raw_results: Any) -> List[Dict[str, str]]:
@@ -32,6 +34,10 @@ def normalize_results(raw_results: Any) -> List[Dict[str, str]]:
 
 
 def execute_biomedical_query(query_text: str) -> Dict[str, Any]:
+    project_root = Path(__file__).resolve().parents[2]
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
     try:
         from main import DBFinder
     except Exception as exc:
