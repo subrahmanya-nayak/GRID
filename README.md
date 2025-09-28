@@ -1,60 +1,125 @@
-# GRID Biomedical Assistant Web UI
+# GRID Biomedical Intelligence Platform
 
-A modern Django 5 application that wraps the GRID biomedical knowledge agents with a user-friendly dashboard. The UI supports secure authentication, asynchronous query execution via Celery, and rich result exploration powered by DataTables.
+The GRID project combines a suite of Python agents for biomedical knowledge discovery with a modern Django web dashboard. Queries
+are classified by an LLM router, parsed into structured entities, normalized against biomedical identifiers, and fanned out to
+Open Targets and ClinicalTrials.gov retrievers. Results can be explored programmatically or through the responsive GRID Insights
+web experience.
 
-## Features
+## System overview
 
-- **Authentication flows** – Email-enabled signup, login, logout, and Django's built-in password reset templates so researchers can manage their own access.
-- **Interactive query workspace** – Submit biomedical questions through a polished Bootstrap form that surfaces progress indicators and a modal spinner while Celery processes requests.
-- **Results with DataTables** – View historical task outcomes in a responsive table enhanced by [DataTables](https://datatables.net/), including live status updates and formatted payloads.
-- **Collapsible conversation history** – Quickly revisit or delete previous conversations from the accordion side panel without leaving the dashboard.
-- **Celery task pipeline** – Each query is persisted to SQLite and dispatched to a Celery worker that orchestrates the underlying `DBFinder` routing logic, ensuring concurrent workloads across users.
+1. **Routing** – `main.DBFinder` uses an Ollama-hosted `gemma2` model to decide whether a free-text question should be sent to
+the Clinical Trials, Open Targets, or both agent pipelines.
+2. **Parsing & normalization** – Each pipeline calls bespoke LangChain-based parsers under `query_parser/` and enriches the
+entities with ontology identifiers via the helpers in `normalizer/`.
+3. **Retrieval & ranking** – The retrievers in `retriever/` orchestrate API calls to Open Targets GraphQL and ClinicalTrials.gov,
+then post-process and rank evidence before persisting CSV outputs with `utils.helpers`.
+4. **Presentation** – The Django app in `webapp/` persists user queries, executes them asynchronously through Celery workers,
+and renders the history, live task status, and authentication screens with an updated Bootstrap 5 interface.
 
-## Project structure
+The repository therefore supports both headless automations (via the Python agents) and an interactive experience for research
+teams.
 
+## Repository layout
+
+| Path | Description |
+|------|-------------|
+| `main.py` | Entry point that exposes the `DBFinder` LLM router used by both the CLI loop and Django services. |
+| `Clinical_Trials_Controller_Agent*.py` | Controller orchestrators that parse queries and run the clinical trials retriever. |
+| `open_targets*.py` | Pipelines that normalize entities and query Open Targets datasets, saving ranked CSV summaries. |
+| `query_parser/` | LangChain prompt chains that convert natural-language queries into structured JSON payloads. |
+| `normalizer/` | Identifier lookup helpers (ZOOMA, ChEMBL, Ensembl) that enrich parsed terms before retrieval. |
+| `retriever/` | Data-access layers for ClinicalTrials.gov and Open Targets including ranking/merging logic. |
+| `utils/` | Shared helper utilities such as CSV persistence. |
+| `webapp/` | Django project with Celery integration, ORM models, templates, and static assets for the GRID Insights UI. |
+| `requirements.txt` | Consolidated Python dependencies for the agents and the Django stack. |
+
+> **Note:** The `*_copy.py` modules mirror their counterparts with the same public functions. They are retained for backwards
+compatibility while the agents are refactored; new integrations should prefer the non-`_copy` modules.
+
+## Data flow at a glance
+
+```mermaid
+graph TD
+    A[User query] --> B{DBFinder router}
+    B -->|clinical_trials| C[Clinical Trials controller]
+    B -->|open_targets| D[Open Targets pipeline]
+    B -->|both| C
+    B -->|both| D
+    C --> E[ClinicalTrials.gov retriever]
+    D --> F[Open Targets retrievers]
+    E --> G[Results CSVs / ORM entries]
+    F --> G
+    G --> H[Dashboard + API clients]
 ```
-webapp/
-├── gridsite/              # Django project settings, URLs, Celery bootstrap
-├── queries/               # Query submission, forms, tasks, and dashboard assets
-└── templates/             # Shared base templates for authentication + layout
-```
 
-## Prerequisites
+## Setting up the environment
+
+### Prerequisites
 
 - Python 3.11+
-- Redis 5+ (for the Celery broker/result backend)
-- Ollama (to serve the `gemma2` model used by the router LLM)
+- [Ollama](https://ollama.com/) with the `gemma2` family pulled locally (`ollama pull gemma2`)
+- Redis 5+ for Celery message brokering
+- Optional: Docker if you prefer containerized execution
 
-These are provisioned automatically when you build the Docker image, but you can also install them manually for local development.
-
-## Local development (without Docker)
+Install dependencies once the prerequisites are available:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
-
-# Start required services in separate terminals
-redis-server
-ollama serve  # ensure the gemma2 model is pulled: `ollama pull gemma2`
-
-# Apply database migrations and create a superuser (optional)
-python webapp/manage.py migrate
-python webapp/manage.py createsuperuser
-
-# Start Celery worker and Django development server
-CELERY_BROKER_URL=redis://localhost:6379/0 \
-CELERY_RESULT_BACKEND=redis://localhost:6379/0 \
-celery -A gridsite worker --loglevel=info
-
-# In another terminal
-python webapp/manage.py runserver 0.0.0.0:8000
 ```
 
-With the services running, open <http://localhost:8000> to access the dashboard.
+## Running the agent pipelines from the CLI
 
-## Running with Docker
+1. Ensure Ollama, Redis, and any required external services are running.
+2. Start an interactive routing session:
+
+   ```bash
+   python main.py
+   ```
+
+   The prompt loops until you type `exit`, classifying each question and delegating to the appropriate pipeline.
+3. CSV outputs are written under the `output/` directory by the retrievers for later analysis.
+
+You can also call individual controllers directly, for example:
+
+```bash
+python Clinical_Trials_Controller_Agent.py
+python open_targets.py
+```
+
+Each script prompts for input (or uses the hard-coded sample) and prints a Rich-rendered summary of the retrieved results.
+
+## Running the GRID Insights web application
+
+1. Apply database migrations and create a superuser if needed:
+
+   ```bash
+   python webapp/manage.py migrate
+   python webapp/manage.py createsuperuser
+   ```
+
+2. Launch the Celery worker in one terminal:
+
+   ```bash
+   CELERY_BROKER_URL=redis://localhost:6379/0 \
+   CELERY_RESULT_BACKEND=redis://localhost:6379/0 \
+   celery -A gridsite worker --loglevel=info
+   ```
+
+3. Start the Django development server in another terminal:
+
+   ```bash
+   python webapp/manage.py runserver 0.0.0.0:8000
+   ```
+
+4. Navigate to <http://localhost:8000> to access the redesigned dashboard featuring live query status, collapsible history,
+   and modernized authentication flows.
+
+### Docker option
+
+A Dockerfile is available to provision Ollama, Redis, Celery, and Django automatically:
 
 ```bash
 docker build -t grid-webapp .
@@ -64,34 +129,24 @@ docker run -p 8000:8000 \
   grid-webapp
 ```
 
-The container automatically:
+Set `CELERY_TASK_ALWAYS_EAGER=true` when experimenting without background workers.
 
-1. Installs Python dependencies and the Ollama runtime.
-2. Starts Redis for Celery message brokering.
-3. Launches Ollama, Celery, applies Django migrations, and serves the web UI on port `8000`.
+## Testing & quality checks
 
-> **Note:** The bundled settings default `CELERY_TASK_ALWAYS_EAGER` to `False` so tasks run asynchronously. If you prefer synchronous execution (useful for quick demos), set `CELERY_TASK_ALWAYS_EAGER=true` when launching the server and worker.
-
-## Verifying key UX flows
-
-The following project files implement the requested functionality:
-
-| Requirement | Implementation |
-|-------------|----------------|
-| Authentication (signup, login, logout, password reset) | Django auth URLs + custom signup view/templates in `webapp/queries/views.py`, `webapp/queries/forms.py`, and `webapp/queries/templates/registration/`. |
-| Query submission with modal progress | Dashboard form + Bootstrap modal spinner in `webapp/queries/templates/queries/dashboard.html` and JavaScript handling in `webapp/queries/static/queries/js/dashboard.js`. |
-| DataTables results display | Table markup in the dashboard template and initialization in the dashboard JavaScript. |
-| Collapsible history with deletion | Accordion markup and delete endpoints in `dashboard.html`, with AJAX delete logic in `dashboard.js`. |
-| Celery-backed concurrent processing | Task definition in `webapp/queries/tasks.py`, Celery app bootstrap in `webapp/gridsite/celery.py`, and async submission wiring in `views.py`. |
-
-For a deeper dive into how results are normalized and persisted, review `webapp/queries/services.py` and `webapp/queries/models.py`.
-
-## Running tests
-
-The project currently relies on Django's built-in validation. You can run standard checks with:
+The repository currently provides Django system checks and relies on integration tests exercised by the pipelines. After
+installing Django locally you can run:
 
 ```bash
 python webapp/manage.py check
 ```
 
-Add your own unit tests under `webapp/queries/tests/` as you expand the feature set.
+Additional unit tests can be added under `webapp/apps/queries/tests/` and alongside the agent modules as the project evolves.
+
+## Troubleshooting tips
+
+- **Router import errors in Django** – Ensure the repository root (containing `main.py`) is on `PYTHONPATH`. The app handles this
+  automatically, but custom scripts may need to export `PYTHONPATH=$PWD`.
+- **External API rate limits** – Both ClinicalTrials.gov and Open Targets enforce rate limiting. Implement caching or retries if
+you plan to run batch jobs.
+- **Ollama availability** – The LLM router, parsers, and controllers expect an accessible Ollama endpoint serving `gemma2`. Start
+the server (`ollama serve`) before invoking the agents or Celery workers.

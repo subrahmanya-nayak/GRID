@@ -1,0 +1,157 @@
+{% extends 'layouts/base.html' %}
+{% load static %}
+{% block title %}Research assistant · GRID{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'queries/css/dashboard.css' %}">
+{% endblock %}
+{% block content %}
+<div class="row g-4 align-items-start">
+    <div class="col-12 col-xl-8 d-flex flex-column gap-4">
+        <section class="glass-card hero-section p-4 p-lg-5">
+            <div class="row g-4 align-items-center">
+                <div class="col-12 col-lg-7">
+                    <span class="hero-badge"><i class="bi bi-activity me-1"></i>AI-augmented analysis</span>
+                    <h1 class="display-6 fw-semibold mt-3">Ask GRID anything about clinical evidence</h1>
+                    <p class="lead text-muted mb-4">Break down complex biomedical questions and uncover relevant trials, targets, and publications in seconds.</p>
+                    <ul class="feature-pills list-unstyled d-flex flex-wrap gap-2 mb-0">
+                        <li class="pill"><i class="bi bi-lightning-charge-fill"></i> Async processing</li>
+                        <li class="pill"><i class="bi bi-diagram-3-fill"></i> Knowledge graph aware</li>
+                        <li class="pill"><i class="bi bi-shield-lock-fill"></i> Private workspace</li>
+                    </ul>
+                </div>
+                <div class="col-12 col-lg-5">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <span class="stat-label">Active queries</span>
+                            <span class="stat-value">{{ active_count }}</span>
+                            <span class="stat-meta text-success"><i class="bi bi-circle-fill me-1"></i>processing</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-label">Completed</span>
+                            <span class="stat-value">{{ status_counts.success|default:0 }}</span>
+                            <span class="stat-meta"><i class="bi bi-check-all me-1"></i>ready to review</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-label">History</span>
+                            <span class="stat-value">{{ history|length }}</span>
+                            <span class="stat-meta">
+                                {% if last_activity %}
+                                    Updated {{ last_activity|timesince }} ago
+                                {% else %}
+                                    Start your first search
+                                {% endif %}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <form id="query-form" class="mt-4">
+                {% csrf_token %}
+                <div class="floating-field">
+                    {{ form.text }}
+                </div>
+                <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-3 mt-4">
+                    <div class="text-muted small">
+                        <i class="bi bi-shield-check me-1"></i>Orchestrated with Celery — updates arrive automatically.
+                    </div>
+                    <button type="submit" class="btn btn-gradient">
+                        <span class="me-2"><i class="bi bi-send-fill"></i></span>Submit query
+                    </button>
+                </div>
+            </form>
+        </section>
+
+        <section class="panel-card p-4 p-lg-5">
+            <div class="section-heading">
+                <h2 class="h4 fw-semibold mb-0">Latest results</h2>
+                <div class="meta d-flex align-items-center gap-2">
+                    <i class="bi bi-columns-gap"></i>
+                    Responsive insights table
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table id="results-table" class="table table-modern align-middle w-100">
+                    <thead>
+                        <tr>
+                            <th>Submitted</th>
+                            <th>Status</th>
+                            <th>Classification</th>
+                            <th>Result</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+    <div class="col-12 col-xl-4 d-flex flex-column gap-4">
+        <section class="panel-card p-4">
+            <div class="section-heading">
+                <h2 class="h5 fw-semibold mb-0">Previous conversations</h2>
+                <span class="badge bg-primary-subtle text-primary-emphasis">{{ history|length }} saved</span>
+            </div>
+            {% if history %}
+                <div class="history-timeline" id="history-list">
+                    {% for item in history %}
+                        <article class="history-item" data-query-id="{{ item.id }}">
+                            <div class="history-status badge bg-soft-{{ item.status }} text-uppercase">{{ item.get_status_display }}</div>
+                            <div class="history-body">
+                                <div class="history-title">{{ item.short_text|default:item.text|truncatechars:80 }}</div>
+                                <div class="history-meta">{{ item.created_at|date:'M j, Y · H:i' }}</div>
+                            </div>
+                            <button class="btn btn-link text-danger p-0 delete-query" data-query-id="{{ item.id }}" title="Delete conversation">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </article>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="text-muted small mb-0">No history yet. Submit your first question to start building your workspace.</p>
+            {% endif %}
+        </section>
+
+        <section class="panel-card p-4 info-card">
+            <h2 class="h6 fw-semibold text-uppercase text-muted mb-3">How GRID works</h2>
+            <ul class="list-unstyled d-flex flex-column gap-3 mb-0">
+                <li class="d-flex gap-3 align-items-start">
+                    <span class="icon-circle bg-primary-subtle text-primary"><i class="bi bi-cpu"></i></span>
+                    <div>
+                        <div class="fw-semibold">Pipeline orchestration</div>
+                        <p class="text-muted small mb-0">Celery tasks fan out enrichment jobs so multiple hypotheses can run in parallel.</p>
+                    </div>
+                </li>
+                <li class="d-flex gap-3 align-items-start">
+                    <span class="icon-circle bg-success-subtle text-success"><i class="bi bi-diagram-3"></i></span>
+                    <div>
+                        <div class="fw-semibold">Entity linking</div>
+                        <p class="text-muted small mb-0">We normalize drugs, targets, and trials to keep results comparable over time.</p>
+                    </div>
+                </li>
+                <li class="d-flex gap-3 align-items-start">
+                    <span class="icon-circle bg-warning-subtle text-warning"><i class="bi bi-bar-chart-line"></i></span>
+                    <div>
+                        <div class="fw-semibold">Insight delivery</div>
+                        <p class="text-muted small mb-0">Structured summaries arrive in the table while detailed reports remain one click away.</p>
+                    </div>
+                </li>
+            </ul>
+        </section>
+    </div>
+</div>
+
+<div class="modal fade" id="processingModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-body text-center p-5">
+                <div class="loader-spinner mx-auto mb-3"></div>
+                <h5 class="mb-2">Working on your request</h5>
+                <p class="text-muted mb-0">Hold tight while we gather insights. This window will close automatically.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+{{ queries_payload|json_script:'initial-data' }}
+<script src="{% static 'queries/js/dashboard.js' %}"></script>
+{% endblock %}
