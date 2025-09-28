@@ -1,41 +1,201 @@
 import sys
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
 from django.conf import settings
 
 
+try:  # pragma: no cover - pandas is optional at runtime
+    import pandas as pd
+except Exception:  # pragma: no cover - keep normalization resilient without pandas
+    pd = None  # type: ignore
+
+
+def _normalize_key(key: str) -> str:
+    return ''.join(ch for ch in str(key).lower() if ch.isalnum())
+
+
+def _flatten_dict(data: Dict[str, Any], parent_key: str = '') -> Dict[str, Any]:
+    items: Dict[str, Any] = {}
+    for key, value in data.items():
+        new_key = f"{parent_key}.{key}" if parent_key else str(key)
+        if isinstance(value, dict):
+            items.update(_flatten_dict(value, new_key))
+        else:
+            items[new_key] = value
+    return items
+
+
+FIELD_LABELS = {
+    'phase': 'Trial phase',
+    'phases': 'Trial phase',
+    'maxphaseforindication': 'Max indication phase',
+    'status': 'Recruitment status',
+    'overallstatus': 'Recruitment status',
+    'condition': 'Condition',
+    'conditions': 'Condition',
+    'disease': 'Disease',
+    'diseasename': 'Disease',
+    'diseaseid': 'Disease ID',
+    'evidence': 'Evidence score',
+    'evidencescore': 'Evidence score',
+    'score': 'Score',
+    'combinedscore': 'Combined score',
+    'mechanism': 'Mechanism',
+    'target': 'Target',
+    'targetclass': 'Target class',
+    'targetapprovedsymbol': 'Target symbol',
+    'targetapprovedname': 'Target name',
+    'drug': 'Drug',
+    'drugname': 'Drug',
+    'drugid': 'Drug ID',
+    'nctnumber': 'NCT number',
+    'interventions': 'Interventions',
+}
+
+LINK_KEYS = {_normalize_key(key) for key in ('url', 'link', 'trial_url', 'target_url', 'href')}
+
+
+def _is_non_empty(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, (list, tuple, set)) and not value:
+        return False
+    if isinstance(value, str) and not value.strip():
+        return False
+    if pd is not None:
+        try:
+            # pandas treats NaN/NA values as "truthy" when compared directly
+            if pd.isna(value):  # type: ignore[attr-defined]
+                return False
+        except TypeError:
+            pass
+    return True
+
+
 def _extract_link(candidate: Dict[str, Any]) -> Optional[str]:
-    for key in ("url", "link", "trial_url", "target_url", "href"):
-        value = candidate.get(key)
+    if not isinstance(candidate, dict):
+        return None
+    for key, value in candidate.items():
         if isinstance(value, str) and value.startswith("http"):
-            return value
+            if _normalize_key(key) in LINK_KEYS:
+                return value
     return None
 
 
-def _build_fields(candidate: Dict[str, Any]) -> List[Dict[str, str]]:
+def _build_fields(candidate: Dict[str, Any], skip_keys: Optional[Sequence[str]] = None) -> List[Dict[str, str]]:
     fields: List[Dict[str, str]] = []
-    field_map = {
-        "phase": "Trial phase",
-        "status": "Recruitment status",
-        "condition": "Condition",
-        "disease": "Disease",
-        "evidence": "Evidence score",
-        "evidence_score": "Evidence score",
-        "score": "Score",
-        "mechanism": "Mechanism",
-        "target": "Target",
-        "drug": "Drug",
+    if not isinstance(candidate, dict):
+        return fields
+
+    skip = {_normalize_key(key) for key in (skip_keys or [])}
+    seen_labels: set[str] = set()
+
+    for key, value in candidate.items():
+        normalized_key = _normalize_key(key)
+        if normalized_key in skip or not _is_non_empty(value):
+            continue
+        label = FIELD_LABELS.get(normalized_key)
+        if not label or label in seen_labels:
+            continue
+        if isinstance(value, (list, tuple, set)):
+            value = ", ".join(str(v) for v in value if v is not None)
+        fields.append({"label": label, "value": str(value)})
+        seen_labels.add(label)
+    return fields
+
+
+DEFAULT_TITLE_KEYS = (
+    'title',
+    'name',
+    'label',
+    'nct number',
+    'drug.name',
+    'target.approvedsymbol',
+    'id',
+)
+DEFAULT_SUMMARY_KEYS = (
+    'summary',
+    'description',
+    'status',
+    'condition',
+    'disease',
+    'targetclass',
+    'mechanism',
+)
+
+
+def _first_nonempty(candidate: Dict[str, Any], keys: Iterable[str]) -> Optional[Any]:
+    targets = [_normalize_key(key) for key in keys]
+    for target in targets:
+        for actual_key, value in candidate.items():
+            if _normalize_key(actual_key) == target and _is_non_empty(value):
+                return value
+    return None
+
+
+def _normalize_mapping(
+    candidate: Dict[str, Any],
+    *,
+    source: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    metadata = metadata or {}
+    combined = dict(candidate)
+    try:
+        combined.update(_flatten_dict(candidate))
+    except Exception:
+        pass
+
+    skip_fields: Sequence[str] = metadata.get('skip_fields', ())  # type: ignore[assignment]
+    skip_fields = tuple(skip_fields) + ('title', 'name', 'summary', 'description', 'source', 'link', 'url', 'href')
+
+    title_keys = metadata.get('title_field') or metadata.get('title_fields') or DEFAULT_TITLE_KEYS
+    if isinstance(title_keys, str):
+        title_keys = [title_keys]
+
+    summary_keys = metadata.get('summary_field') or metadata.get('summary_fields') or DEFAULT_SUMMARY_KEYS
+    if isinstance(summary_keys, str):
+        summary_keys = [summary_keys]
+
+    link_field = metadata.get('link_field') or metadata.get('link_fields')
+    if isinstance(link_field, str):
+        link_field = [link_field]
+
+    title = _first_nonempty(combined, title_keys)
+    summary = _first_nonempty(combined, summary_keys)
+    link = _extract_link(combined)
+    if not link and link_field:
+        link_candidate = _first_nonempty(combined, link_field)
+        if isinstance(link_candidate, str) and link_candidate.startswith('http'):
+            link = link_candidate
+
+    resolved_source = (
+        candidate.get('source')
+        if isinstance(candidate, dict) and candidate.get('source')
+        else metadata.get('source')
+        or source
+        or 'Result'
+    )
+
+    fields = _build_fields(combined, skip_keys=skip_fields)
+
+    return {
+        'source': str(resolved_source),
+        'title': str(title or resolved_source),
+        'summary': str(summary or ''),
+        'fields': fields,
+        'link': link,
+        'raw': candidate,
     }
 
-    for key, label in field_map.items():
-        value = candidate.get(key)
-        if not value:
-            continue
-        if isinstance(value, (list, tuple)):
-            value = ", ".join(str(v) for v in value)
-        fields.append({"label": label, "value": str(value)})
-    return fields
+
+def _iter_entries(raw: Any) -> Iterable[Any]:
+    if isinstance(raw, (list, tuple, set)):
+        for item in raw:
+            yield from _iter_entries(item)
+    else:
+        yield raw
 
 
 def normalize_results(raw_results: Any) -> List[Dict[str, Any]]:
@@ -44,48 +204,58 @@ def normalize_results(raw_results: Any) -> List[Dict[str, Any]]:
     if not raw_results:
         return normalized
 
-    for entry in raw_results:
-        if hasattr(entry, 'to_dict'):
+    for entry in _iter_entries(raw_results):
+        if entry is None:
+            continue
+
+        if pd is not None and isinstance(entry, pd.DataFrame):
+            metadata = getattr(entry, 'attrs', {}) or {}
+            records = entry.to_dict(orient='records')
+            for record in records:
+                normalized.append(
+                    _normalize_mapping(
+                        record,
+                        source=metadata.get('source') or entry.__class__.__name__,
+                        metadata=metadata,
+                    )
+                )
+            continue
+
+        if pd is not None and isinstance(entry, pd.Series):
+            metadata = getattr(entry, 'attrs', {}) or {}
+            normalized.append(
+                _normalize_mapping(
+                    entry.to_dict(),
+                    source=metadata.get('source') or entry.__class__.__name__,
+                    metadata=metadata,
+                )
+            )
+            continue
+
+        if hasattr(entry, 'to_dict') and not isinstance(entry, dict):
             candidate = entry.to_dict()
-            title = candidate.get('title') or candidate.get('name') or entry.__class__.__name__
-            summary = candidate.get('summary') or candidate.get('description') or ""
-            normalized.append({
-                'source': candidate.get('source') or entry.__class__.__name__,
-                'title': str(title),
-                'summary': str(summary),
-                'fields': _build_fields(candidate),
-                'link': _extract_link(candidate),
-                'raw': candidate,
-            })
-        elif hasattr(entry, 'to_string'):
-            normalized.append({
-                'source': entry.__class__.__name__,
-                'title': getattr(entry, 'name', entry.__class__.__name__),
-                'summary': entry.to_string(),
-                'fields': [],
-                'link': None,
-                'raw': {},
-            })
-        elif isinstance(entry, dict):
-            title = entry.get('title') or entry.get('name') or entry.get('id') or entry.get('source', 'Result')
-            summary = entry.get('summary') or entry.get('description') or ''
-            normalized.append({
-                'source': entry.get('source', 'Result'),
-                'title': str(title),
-                'summary': str(summary or ''),
-                'fields': _build_fields(entry),
-                'link': _extract_link(entry),
-                'raw': entry,
-            })
-        else:
-            normalized.append({
-                'source': getattr(entry, '__class__', type('Result', (), {})).__name__,
-                'title': getattr(entry, 'title', 'Result'),
-                'summary': str(entry),
-                'fields': [],
-                'link': None,
-                'raw': {},
-            })
+            if isinstance(candidate, dict):
+                normalized.append(
+                    _normalize_mapping(
+                        candidate,
+                        source=entry.__class__.__name__,
+                    )
+                )
+                continue
+
+        if isinstance(entry, dict):
+            normalized.append(_normalize_mapping(entry, source=entry.get('source')))
+            continue
+
+        normalized.append({
+            'source': getattr(entry, '__class__', type('Result', (), {})).__name__,
+            'title': getattr(entry, 'title', 'Result'),
+            'summary': str(entry),
+            'fields': [],
+            'link': None,
+            'raw': {},
+        })
+
     return normalized
 
 
