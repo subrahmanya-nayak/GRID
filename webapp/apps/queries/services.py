@@ -2,6 +2,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
+from django.conf import settings
+
 
 def normalize_results(raw_results: Any) -> List[Dict[str, str]]:
     normalized: List[Dict[str, str]] = []
@@ -34,9 +36,13 @@ def normalize_results(raw_results: Any) -> List[Dict[str, str]]:
 
 
 def execute_biomedical_query(query_text: str) -> Dict[str, Any]:
-    project_root = Path(__file__).resolve().parents[2]
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
+    repo_root = Path(settings.BASE_DIR).resolve().parent
+    base_dir = Path(settings.BASE_DIR).resolve()
+
+    for candidate in (repo_root, base_dir):
+        candidate_str = str(candidate)
+        if candidate_str not in sys.path:
+            sys.path.insert(0, candidate_str)
 
     try:
         from main import DBFinder

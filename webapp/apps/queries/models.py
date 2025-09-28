@@ -26,4 +26,4 @@ class Query(models.Model):
         return (self.text[:75] + '...') if len(self.text) > 75 else self.text
 
     def __str__(self):
-        return f"Query #{self.pk} by {self.user}".
+        return f"Query #{self.pk} by {self.user}"

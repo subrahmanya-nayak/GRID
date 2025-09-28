@@ -33,7 +33,9 @@ class DashboardView(TemplateView):
         context = super().get_context_data(**kwargs)
         context['form'] = QueryForm()
 
-        queries = Query.objects.filter(user=self.request.user)
+        queries = list(
+            Query.objects.filter(user=self.request.user).order_by('-created_at')
+        )
         context['queries_payload'] = [
             {
                 'id': query.id,
@@ -47,6 +49,12 @@ class DashboardView(TemplateView):
             for query in queries
         ]
         context['history'] = queries
+        status_counts = {'pending': 0, 'running': 0, 'success': 0, 'failed': 0}
+        for query in queries:
+            status_counts[query.status] = status_counts.get(query.status, 0) + 1
+        context['status_counts'] = status_counts
+        context['active_count'] = status_counts.get('pending', 0) + status_counts.get('running', 0)
+        context['last_activity'] = queries[0].created_at if queries else None
         return context
 
 

@@ -1,0 +1,27 @@
+{% if messages %}
+<div class="flash-container mb-4">
+    {% for message in messages %}
+        {% with tag=message.tags|default:'info' %}
+        <div class="alert alert-modern shadow-sm border-0 mb-3 alert-{{ tag }}">
+            <div class="d-flex align-items-start gap-3">
+                <span class="alert-icon flex-shrink-0">
+                    {% if 'success' in tag %}
+                        <i class="bi bi-check-circle-fill"></i>
+                    {% elif 'warning' in tag %}
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                    {% elif 'error' in tag or 'danger' in tag %}
+                        <i class="bi bi-x-circle-fill"></i>
+                    {% else %}
+                        <i class="bi bi-info-circle-fill"></i>
+                    {% endif %}
+                </span>
+                <div>
+                    <div class="fw-semibold text-capitalize">{{ tag|default:'Notice' }}</div>
+                    <div>{{ message }}</div>
+                </div>
+            </div>
+        </div>
+        {% endwith %}
+    {% endfor %}
+</div>
+{% endif %}
